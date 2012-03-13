@@ -40,6 +40,21 @@
 #define setBlu(x) ( OCR0B = 255 - (x) )
 #define setRGB(x,y,z) { setRed(x); setGrn(y); setBlu(z); }
 
+
+// for "millis()" function, a count of 0.256ms units
+static volatile uint32_t tick;
+//
+uint32_t millis(void)
+{
+    return tick/4;
+}
+// overflows every 0.256msec -> "millis" = ~tick/4
+ISR(SIG_OVERFLOW1,ISR_NOBLOCK)
+{
+    tick++;
+}
+
+//
 int main(void)
 {
     wdt_disable();  // just in case
@@ -60,25 +75,45 @@ int main(void)
     // COM1B1 = clear on compare match, set when 
     GTCCR = _BV(PWM1B) | 
         _BV(COM1B1); 
-    //Timer1 prescaler /8  (1 MHz at 8MHz clock)
+
+    //Timer1 prescaler /8  (4kHz @8MHz clock: 8e6/8/256 = 3906 Hz,aka 0.256ms)
     TCCR1 = _BV(CS12);
 
-    // a little demo to ramp up and down the brightness of all three
+    // create a "millis" by using Timer1 overflow interrupt
+    TIFR  |= _BV( TOV1 );
+    TIMSK |= _BV( TOIE1 );
+    sei();
 
-    int val = 0;
-    int incdec = 1;
-    while( 1 ) { 
-        val = val + incdec;
-        if( val == 255 ) incdec = -1;
-        if( val == 0 ) incdec = 1;
+    int v = 0;
+    setRGB(v,v,v); // start black
 
-        setRed( val );
-        setGrn( val );
-        setBlu( val );
-        
-        _delay_ms( 10 );
+    uint32_t lastMillis = millis();
+
+    // a little demo of just on/off
+    int flashcnt = 20;
+    while( flashcnt ) {
+        if( (millis() - lastMillis) >= 250 ) {
+            lastMillis = millis();
+            v = (v) ? 0 : flashcnt*10;  // toggle hi/lo, but dimming high
+            setRGB(v,v,v);
+            flashcnt--;
+        }
     }
 
-
+    // a little demo to ramp up and down the brightness of all three
+    int incdec = 1;
+    while( 1 ) { 
+        //_delay_ms(10);
+        if( (millis() - lastMillis) < 10 )  {
+            continue;
+        }
+        lastMillis = millis();
+        v += incdec;
+        if( v == 255 ) incdec = -1;
+        if( v ==   0 ) incdec = 1;
+        
+        setRGB( v,v,v );
+    }
+    return 0;
 }
 
